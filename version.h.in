@@ -1,0 +1,6 @@
+#pragma once
+
+/**
+ * Automatically generated version header
+ */
+#define SANITIZE_VERSION "@PROJECT_VERSION@"

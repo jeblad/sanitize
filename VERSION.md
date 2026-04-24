@@ -1,0 +1,3 @@
+# Project version
+
+1.0.0 – last available version

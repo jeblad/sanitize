@@ -1,0 +1,14 @@
+BasedOnStyle: Google
+IndentWidth: 5
+ColumnLimit: 80
+
+# Tvinger argumenter til nye linjer når det er flere enn ett
+AlignAfterOpenBracket: AlwaysBreak
+BinPackArguments: false
+BinPackParameters: false
+
+# Holder lukkende parentes på siste linje hvis mulig
+AllowAllParametersOfDeclarationOnNextLine: false
+
+# Konstruktør-innstillinger
+BreakConstructorInitializers: BeforeComma
