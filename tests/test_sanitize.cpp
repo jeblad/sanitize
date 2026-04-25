@@ -10,15 +10,19 @@ void test_rewrite() {
     // Test basic replacements
     assert(sanitize::rewrite("simple.txt") == "simple.txt");
     assert(sanitize::rewrite("file/name.txt") == "file_name.txt");
-    
-    // Test loose mode (default) - spaces and shell metachars are replaced
+
+    // Test tight mode (default) - spaces and shell metachars are replaced
     assert(sanitize::rewrite("file name.txt") == "file_name.txt");
     assert(sanitize::rewrite("file$name.txt") == "file_name.txt");
     assert(sanitize::rewrite("file(1).txt") == "file_1_.txt");
 
-    // Test tight mode - spaces allowed, but specific OS forbidden chars blocked
-    assert(sanitize::rewrite("file name.txt", true) == "file name.txt");
-    assert(sanitize::rewrite("file:name.txt", true) == "file_name.txt");
+    // Test loose mode (false) - spaces allowed, but specific OS forbidden chars blocked
+    assert(sanitize::rewrite("file name.txt", false) == "file name.txt");
+    assert(sanitize::rewrite("file:name.txt", false) == "file_name.txt");
+
+    // Test custom replacement character
+    assert(sanitize::rewrite("file/name.txt", false, '+') == "file+name.txt");
+    assert(sanitize::rewrite("..", false, '-') == "-");
 
     // Test path components
     assert(sanitize::rewrite(".") == "_");
@@ -35,37 +39,33 @@ void test_rewrite() {
     std::cout << "Rewrite tests passed!\n" << std::endl;
 }
 
+void test_escape() {
+    std::cout << "Running escape tests..." << std::endl;
+    assert(sanitize::escape("file name.txt", true) == "file\\ name.txt");
+    assert(sanitize::escape("line\nbreak") == "line\\nbreak");
+    assert(sanitize::escape("dangerous; shell", true) == "dangerous\\;\\ shell");
+    assert(sanitize::escape("safe_filename.txt", false) == "safe_filename.txt");
+    assert(sanitize::escape("tight/path", true) == "tight\\/path");
+    assert(sanitize::escape("\xFF", true) == "\\xFF");
+    std::cout << "Escape tests passed!\n" << std::endl;
+}
+
 void test_validate() {
     std::cout << "Running validate tests..." << std::endl;
 
     // Should not throw for valid filenames
-    sanitize::validate("valid_filename.txt");
-    sanitize::validate("filename with spaces.txt", true);
+    assert(sanitize::validate("valid_filename.txt") == true);
+    assert(sanitize::validate("filename with spaces.txt", false) == true);
 
     // Path traversal components should throw
-    try {
-        sanitize::validate("..");
-        assert(false && "Validation should have failed for '..'");
-    } catch (const std::invalid_argument& e) {
-        std::cout << "Caught expected error: " << e.what() << std::endl;
-    }
+    assert(sanitize::validate("..") == false);
 
-    // Illegal characters in loose mode
-    try {
-        sanitize::validate("bad;char.txt");
-        assert(false && "Validation should have failed for ';'");
-    } catch (const std::invalid_argument& e) {
-        std::cout << "Caught expected error: " << e.what() << std::endl;
-    }
+    // Semicolon is forbidden in tight mode (default) but allowed in loose mode
+    assert(sanitize::validate("bad;char.txt") == false);
+    assert(sanitize::validate("bad;char.txt", false) == true);
 
     // Overlong UTF-8 (Security bypass attempt)
-    // A 2-byte encoding of '/' (0x2F) is 0xC0 0xAF
-    try {
-        sanitize::validate("\xC0\xAF");
-        assert(false && "Validation should have failed for overlong UTF-8");
-    } catch (const std::invalid_argument& e) {
-        std::cout << "Caught expected error: " << e.what() << std::endl;
-    }
+    assert(sanitize::validate("\xC0\xAF") == false);
 
     std::cout << "Validate tests passed!\n" << std::endl;
 }
@@ -73,6 +73,7 @@ void test_validate() {
 int main() {
     try {
         test_rewrite();
+        test_escape();
         test_validate();
         std::cout << "All tests passed successfully!" << std::endl;
     } catch (const std::exception& e) {

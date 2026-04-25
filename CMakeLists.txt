@@ -19,3 +19,6 @@ target_compile_features(sanitize PUBLIC cxx_std_17) # Explicitly set C++17 featu
 add_executable(sanitize_test tests/test_sanitize.cpp)
 target_include_directories(sanitize_test PRIVATE include) # Explicitly add include for test
 target_link_libraries(sanitize_test sanitize)
+
+enable_testing() # Enable CTest support
+add_test(NAME sanitize_unit_tests COMMAND sanitize_test)
