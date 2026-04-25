@@ -3,7 +3,7 @@
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License.
+ * the Free Software Foundation; only version 3 of the License applies.
  * 
  * See accompanying file LICENSE or the page at https://www.gnu.org/licenses/
  * Copyright 2026 John Erling Blad
