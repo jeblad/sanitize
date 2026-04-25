@@ -14,13 +14,6 @@ Sanitize is a portable C++ library designed to secure file operations by validat
 -   **UTF-8 Aware**: Correctly handles multi-byte UTF-8 characters, ensuring they are preserved unless they are part of an invalid sequence or overlong encoding.
 
 
-## Heuristic Parsing Logic
-
-The library employs a deterministic byte-stream inspection to validate input integrity. It recognizes:
-*   **Overlong UTF-8 Encodings**: It calculates the codepoint for every multi-byte sequence to ensure it uses the minimum necessary bytes, preventing attacks that use obfuscated characters (like `/` or `.`) to bypass filters.
-*   **Path Traversal Tokens**: It explicitly identifies and blocks directory navigation segments (`.` and `..`) that could lead to unauthorized filesystem access.
-*   **Context-Aware Forbidden Characters**: Based on the selected strictness, it identifies shell metacharacters (e.g., `$`, `;`, `&`) or OS-specific restricted characters (e.g., `:`, `*`, `?`) to ensure compatibility and safety.
-
 ## Limitations
 
 *   **Specialized Scope**: This library is strictly intended for sanitizing strings for use as filenames and within shell environments. It is **not** a general-purpose validation library; for example, it cannot validate natural language data like proper names, addresses, or emails.
@@ -30,20 +23,12 @@ The library employs a deterministic byte-stream inspection to validate input int
 *   **Reserved Names**: While it filters illegal characters, it does not currently check against a blacklist of OS-reserved filenames that contain only legal characters (such as `NUL`, `CON`, or `PRN` on Windows).
 *   **Filesystem Specifics**: It does not account for specific filesystem limits like maximum path length (usually 4096 bytes) or maximum filename length (usually 255 bytes).
 
-## Building and Testing
+## Parsing Logic
 
-This project uses CMake for its build system.
-
-```bash
-cmake -B build
-cmake --build build
-```
-
-To run the included unit tests, use CTest after building:
-
-```bash
-( build ; ctest --verbose )
-```
+The library employs a deterministic byte-stream inspection to validate input integrity. It recognizes:
+*   **Overlong UTF-8 Encodings**: It calculates the codepoint for every multi-byte sequence to ensure it uses the minimum necessary bytes, preventing attacks that use obfuscated characters (like `/` or `.`) to bypass filters.
+*   **Path Traversal Tokens**: It explicitly identifies and blocks directory navigation segments (`.` and `..`) that could lead to unauthorized filesystem access.
+*   **Context-Aware Forbidden Characters**: Based on the selected strictness, it identifies shell metacharacters (e.g., `$`, `;`, `&`) or OS-specific restricted characters (e.g., `:`, `*`, `?`) to ensure compatibility and safety.
 
 ## Usage
 
@@ -104,6 +89,21 @@ int main() {
     }
     return 0;
 }
+```
+
+## Building and Testing
+
+This project uses CMake for its build system.
+
+```bash
+cmake -B build
+cmake --build build
+```
+
+To run the included unit tests, use CTest after building:
+
+```bash
+( build ; ctest --verbose )
 ```
 
 ## License
