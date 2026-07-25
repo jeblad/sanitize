@@ -1,11 +1,15 @@
-cmake_minimum_required(VERSION 3.10)
-project(sanitize VERSION 1.0.0)
+cmake_minimum_required(VERSION 3.19)
+
+# Read version from package.json
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" PACKAGE_JSON_CONTENT)
+string(JSON PROJECT_VERSION_FROM_PACKAGE_JSON GET "${PACKAGE_JSON_CONTENT}" "version")
+
+project(sanitize VERSION ${PROJECT_VERSION_FROM_PACKAGE_JSON})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 configure_file(version.h.in include/sanitize/version.h)
-configure_file(version.md.in ${CMAKE_CURRENT_SOURCE_DIR}/VERSION.md @ONLY)
 
 add_library(sanitize src/sanitize.cpp)
 set_target_properties(sanitize PROPERTIES POSITION_INDEPENDENT_CODE ON)

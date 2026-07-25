@@ -2,6 +2,9 @@
 [bB][uU][iI][lL][dD]/
 _deps/
 
+# node (commit-and-tag-version tooling)
+node_modules/
+
 # vscode
 .[vV][sS][cC]ode/
 

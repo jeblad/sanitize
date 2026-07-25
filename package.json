@@ -1,0 +1,14 @@
+{
+  "name": "sanitize",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Filename and path sanitization with UTF-8 security checks",
+  "author": "John Erling Blad",
+  "license": "GPL-3.0-only",
+  "commit-and-tag-version": {
+    "preMajor": false
+  },
+  "scripts": {
+    "release": "commit-and-tag-version"
+  }
+}
