@@ -10,6 +10,7 @@ node_modules/
 
 # cmake
 CMakeCache.txt
+CMakeUserPresets.json
 
 # backup
 *.old
