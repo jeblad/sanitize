@@ -103,7 +103,7 @@ cmake --build build
 To run the included unit tests, use CTest after building:
 
 ```bash
-( build ; ctest --verbose )
+(cd build && ctest --verbose)
 ```
 
 ## License
