@@ -1,99 +1,176 @@
 # Sanitize
 
-A portable C++ library for filename and path sanitization, incorporating UTF-8 security checks to prevent common vulnerabilities.
+A header-only C++20 library for filtering character streams against a
+compile-time-defined forbidden-character set, with UTF-8 security checks.
 
 ## Overview
-Sanitize is a portable C++ library designed to secure file operations by validating and cleaning untrusted input. It features robust UTF-8 inspection to detect overlong encodings and path traversal attempts, ensuring filenames are safe for use across different operating systems and shells.
+
+Sanitize is not a general-purpose text validation library, and it does not
+validate Unicode character sets in general — that has too many edge cases
+and gaps to do safely. Its scope is narrower and more concrete: characters
+that might end up on a command line, in a shell argument, or in some other
+user-facing view. Filenames are one example of that, but the library isn't
+filename-specific; it's built for filtering character streams in general,
+against whatever forbidden-character set the caller defines.
+
+## Requirements
+
+- C++20 (concepts and non-type template string parameters are used throughout)
+- Header-only: `#include "sanitize/sanitize.hpp"`, no library to link
 
 ## Features
 
--   **Filename Rewriting**: Replaces illegal or problematic characters in filenames with a safe alternative (e.g., underscore `_`).
--   **Character Escaping**: Instead of replacing characters, this prefixes illegal characters with a backslash or hex-encodes control characters, making strings safe for display or shell use.
--   **Validation and Untainting**: Offers `validate` for lightweight boolean checks and `untaint` for secure, exception-throwing data copying.
--   **Configurable Strictness**: Supports both a "tight" mode for very strict character filtering (e.g., for Windows/Linux filesystem compatibility) and a "loose" mode that also filters common shell metacharacters.
--   **UTF-8 Aware**: Correctly handles multi-byte UTF-8 characters, ensuring they are preserved unless they are part of an invalid sequence or overlong encoding.
-
+- **Compile-time character sets**: `FixedString` is a set of characters
+  fixed at compile time, with `+` (union) and `-` (difference) to compose
+  new sets from existing ones without repeating yourself.
+- **`Config<Chars>`**: an immutable, O(1) forbidden-character lookup built
+  from a `FixedString`. No singleton, no runtime reconfiguration — if you
+  want a different set, you construct a different `Config`.
+- **`map` / `replace` / `filter` / `escape`**: `map` applies any callable of
+  your choosing to every forbidden character, leaving everything else
+  (including well-formed multibyte UTF-8) untouched. `replace`, `filter`,
+  and `escape` are the three built-in transforms — substitute a fixed
+  character, drop the character, or backslash-escape it — all just `map`
+  under the hood.
+- **`strict` / `isValid`**: `strict` inspects a string and throws on the
+  first forbidden character or encoding problem, without copying anything.
+  `isValid` is `strict` wrapped in a try/catch for callers who want a bool.
+- **`findSubstrings`**: partitions a string into a lazy sequence of typed
+  `Fragment`s (`Valid`/`Forbidden`/`Invalid`), run-length-grouped, covering
+  every byte of input — not just the anomalies. No write-back; build a new
+  string from the fragments.
+- **Overlong UTF-8 handling**: every function decodes UTF-8 and checks
+  whether the *decoded* codepoint is forbidden, never the raw bytes, so
+  an overlong-encoded forbidden character (a known filter-bypass technique)
+  is always caught regardless of policy. The `Overlong` enum
+  (`Throw`/`Remove`/`Replace`/`AsIs`/`Compact`) only governs what happens to
+  an overlong sequence whose decoded codepoint turns out to be harmless.
 
 ## Limitations
 
-*   **Specialized Scope**: This library is strictly intended for sanitizing strings for use as filenames and within shell environments. It is **not** a general-purpose validation library; for example, it cannot validate natural language data like proper names, addresses, or emails.
-*   **Unicode Normalization**: The library validates UTF-8 structural integrity and prevents overlong encodings but does not perform Unicode normalization (e.g., NFC/NFD). 
-    *   **Security Risk**: Certain characters like "Full-width Solidus" (`／` U+FF0F) may pass filters but later be normalized by the OS or downstream libraries into a standard slash (`/`).
-    *   **Best Practice**: Always **Normalize first, then Sanitize**. This ensures that any "hidden" characters are expanded to their canonical forms before the security checks are applied.
-*   **Reserved Names**: While it filters illegal characters, it does not currently check against a blacklist of OS-reserved filenames that contain only legal characters (such as `NUL`, `CON`, or `PRN` on Windows).
-*   **Filesystem Specifics**: It does not account for specific filesystem limits like maximum path length (usually 4096 bytes) or maximum filename length (usually 255 bytes).
-
-## Parsing Logic
-
-The library employs a deterministic byte-stream inspection to validate input integrity. It recognizes:
-*   **Overlong UTF-8 Encodings**: It calculates the codepoint for every multi-byte sequence to ensure it uses the minimum necessary bytes, preventing attacks that use obfuscated characters (like `/` or `.`) to bypass filters.
-*   **Path Traversal Tokens**: It explicitly identifies and blocks directory navigation segments (`.` and `..`) that could lead to unauthorized filesystem access.
-*   **Context-Aware Forbidden Characters**: Based on the selected strictness, it identifies shell metacharacters (e.g., `$`, `;`, `&`) or OS-specific restricted characters (e.g., `:`, `*`, `?`) to ensure compatibility and safety.
+- **ASCII only, for now**: forbidden-character sets are restricted to 7-bit
+  ASCII (enforced at compile time). A set containing a character above
+  U+007F fails to compile — that's a placeholder for a future SIMD-based
+  path, not yet implemented.
+- **No Unicode normalization**: the library checks UTF-8 structural
+  validity and rejects overlong encodings, but doesn't normalize (NFC/NFD).
+  A visually similar character — e.g. Full-width Solidus (`／` U+FF0F) —
+  can pass through unfiltered and later be normalized by the OS or a
+  downstream library into an ordinary `/`. Normalize first, then sanitize.
+- **No path semantics**: the library filters characters, not path
+  structure. It has no opinion on `.`/`..` path-traversal components; if a
+  path separator like `/` matters for your use case, put it in your
+  forbidden set like any other character.
+- **No reserved-name or filesystem-limit checks**: it doesn't check
+  OS-reserved names (`NUL`, `CON`, `PRN`, ...) or filesystem limits like
+  path length, since those aren't character-level concerns.
 
 ## Usage
 
-### Rewriting Filenames
-
-The `rewrite` function takes a `std::string_view` and returns a new `std::string` with illegal characters replaced.
+### Defining a character set
 
 ```cpp
-#include <iostream>
 #include "sanitize/sanitize.hpp"
 
-int main() {
-    std::string original_name = "My/File:Name?with*illegal\"chars.txt";
-    std::string sanitized_name = sanitize::rewrite(original_name);
-    std::cout << "Original: " << original_name << std::endl;
-    std::cout << "Sanitized (default): " << sanitized_name << std::endl;
+constexpr auto TightChars = sanitize::FixedString("\\/:;!?\"'`<>|*$&()[]{}@~# ");
+constexpr auto LooseChars = sanitize::FixedString("\\/:?\"<>|*");
 
-    std::string tight_name = "Another File with spaces & special chars.txt";
-    std::string sanitized_tight = sanitize::rewrite(tight_name, true); // Use tight mode
-    std::cout << "Original (tight): " << tight_name << std::endl;
-    std::cout << "Sanitized (tight): " << sanitized_tight << std::endl;
+// Compose new sets from existing ones — no need to repeat the base set.
+constexpr auto ExtraChars = TightChars + sanitize::FixedString("%");
+```
 
-    return 0;
+### Replacing forbidden characters
+
+```cpp
+std::string name = "My/File:Name?with*illegal\"chars.txt";
+std::string clean = sanitize::replace<TightChars, '_'>(name);
+// "My_File_Name_with_illegal_chars.txt"
+```
+
+### Filtering (dropping) forbidden characters
+
+```cpp
+std::string clean = sanitize::filter<TightChars>("file name.txt");
+// "filename.txt"
+```
+
+### Escaping for display or shell use
+
+```cpp
+std::string untrusted = "Hello World; rm -rf /";
+std::string escaped = sanitize::escape<TightChars>(untrusted);
+// "Hello\ World\;\ rm\ -rf\ \/"
+```
+
+`escape` only produces output that can be safely unescaped (one where a
+reader can tell an escape sequence apart from a literal backslash) if `\` is
+itself a member of the character set — `TightChars` above includes it.
+If your set omits `\`, a literal backslash in the input passes through
+unescaped, which can make the output ambiguous to a downstream parser.
+
+### Validating
+
+```cpp
+sanitize::isValid<TightChars>("safe_filename.txt");   // true
+sanitize::isValid<TightChars>("bad;name.txt");        // false
+sanitize::isValid<LooseChars>("bad;name.txt");        // true — ';' isn't in LooseChars
+
+// strict throws std::invalid_argument instead of returning false.
+sanitize::strict<TightChars>("bad;name.txt");
+```
+
+### A custom transform
+
+`replace`/`filter`/`escape` are just `map` with a particular transform.
+Anything invocable on a `char` and returning something string-convertible
+works:
+
+```cpp
+std::string result = sanitize::map<TightChars>("a/b", [](char c) {
+    return std::string("[") + c + "]";
+});
+// "a[/]b"
+```
+
+### Controlling overlong-encoding handling
+
+```cpp
+// Default: any overlong sequence is rejected, even a harmless one.
+sanitize::isValid<TightChars>(input);
+
+// Re-encode a harmless overlong sequence to its canonical minimal form
+// instead of rejecting it. A forbidden character is still always caught,
+// regardless of this policy.
+sanitize::isValid<TightChars, sanitize::Overlong::Compact>(input);
+```
+
+### Partitioning a string by type
+
+`findSubstrings` splits input into a lazy sequence of `Fragment`s, each one
+a run of consecutive characters sharing the same `FragmentType` (`Valid`,
+`Forbidden`, or `Invalid`). Every byte of input is covered by exactly one
+fragment — this isn't limited to the "bad" parts, it's the whole string,
+typed. `Fragment::text` is a `std::string_view` into `input`: valid as
+long as `input` stays alive and unmodified. There's no write-back —
+build a new string from the fragments instead of editing `input` in place.
+
+```cpp
+for (auto frag : sanitize::findSubstrings<TightChars>("file/name.txt")) {
+    // Valid: "file"
+    // Forbidden: "/"
+    // Valid: "name.txt"
 }
 ```
 
-### Escaping for Display or Shell
-
-Use `escape` when you want to see the original "bad" characters in a safe format, or when passing arguments to a shell.
-
-```cpp
-#include <iostream>
-#include "sanitize/sanitize.hpp"
-
-int main() {
-    std::string untrusted = "Hello\nWorld; rm -rf /";
-    // Result: Hello\nWorld\; rm -rf /
-    std::cout << "Escaped: " << sanitize::escape(untrusted, false) << std::endl;
-    return 0;
-}
-```
-
-### Validating Filenames
-
-The `validate` function returns `false` if the input string contains any forbidden elements.
-
-```cpp
-#include <iostream>
-#include "sanitize/sanitize.hpp"
-
-int main() {
-    if (sanitize::validate("safe_filename.txt")) {
-        std::cout << "safe_filename.txt is valid." << std::endl;
-    }
-    
-    if (!sanitize::validate("../path/traversal.txt")) {
-        std::cout << "Traversal detected!" << std::endl;
-    }
-    return 0;
-}
-```
+This is the primitive `replace`/`filter`/`escape` are effectively built
+on top of; use it directly when you need custom per-fragment handling
+(e.g. logging what was found, or a transform that depends on surrounding
+context) that a per-character `map` transform can't express.
 
 ## Building and Testing
 
-This project uses CMake for its build system.
+This project uses CMake. Since the library itself is header-only, building
+only produces the test executable.
 
 ```bash
 cmake -B build
@@ -112,6 +189,6 @@ This project is licensed under the GNU General Public License v3.0. See the LICE
 
 ## Acknowledgements
 
-*Created with assistance from AI tools (Gemini 2.5, 3.0, and 3.1, in both Flash and Pro versions) across all parts of this work.*
+*Created with assistance from AI tools (Gemini 2.5, 3.0, and 3.1, in both Flash and Pro versions; Claude 4.6, 4.8, and 5.0) across all parts of this work.*
 
 This project was developed independently, with no external financial or institutional support other than the AI tools mentioned. The views and conclusions contained herein are those of the author(s) and should not be interpreted as representing the official policies or endorsements, either expressed or implied, of any external agency or entity.

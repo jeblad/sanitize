@@ -1,6 +1,7 @@
 BasedOnStyle: Google
-IndentWidth: 5
+IndentWidth: 4
 ColumnLimit: 80
+NamespaceIndentation: None
 
 # Tvinger argumenter til nye linjer når det er flere enn ett
 AlignAfterOpenBracket: AlwaysBreak

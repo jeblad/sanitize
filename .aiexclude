@@ -1,0 +1,4 @@
+# Exclude the generated header from AI editing: it is regenerated from
+# sanitize.hpp.in on every CMake configure, so edits made directly here are
+# silently discarded on the next build. Edit sanitize.hpp.in instead.
+include/sanitize/sanitize.hpp
