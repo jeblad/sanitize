@@ -1,6 +1,6 @@
 {
   "preMajor": false,
   "scripts": {
-    "postbump": "cmake -B build -S . && git add include/sanitize/sanitize.hpp"
+    "postbump": "cmake -B build -S . && git add include/sanitize/sanitize.hpp && git commit --amend --no-edit"
   }
 }
