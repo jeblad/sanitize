@@ -1,6 +1,6 @@
 {
   "name": "sanitize",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Filename and path sanitization with UTF-8 security checks",
   "author": "John Erling Blad",
