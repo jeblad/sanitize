@@ -3,7 +3,7 @@
  * This file is generated from sanitize.hpp.in via CMake.
  *
  * sanitize – filename and path sanitization with UTF-8 security checks
- * Version v2.0.0
+ * Version v2.1.0
  * Copyright 2026 John Erling Blad
  *
  * This program is free software: you can redistribute it and/or modify
@@ -16,9 +16,9 @@
 #pragma once
 
 #define SANITIZE_VERSION_MAJOR 2
-#define SANITIZE_VERSION_MINOR 0
+#define SANITIZE_VERSION_MINOR 1
 #define SANITIZE_VERSION_PATCH 0
-#define SANITIZE_VERSION "v2.0.0"
+#define SANITIZE_VERSION "v2.1.0"
 
 #include <concepts>
 #include <cstddef>
