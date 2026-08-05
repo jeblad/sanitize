@@ -32,10 +32,10 @@ against whatever forbidden-character set the caller defines.
   and `escape` are the three built-in transforms — substitute a fixed
   character, drop the character, or backslash-escape it — all just `map`
   under the hood.
-- **`strict` / `isValid`**: `strict` inspects a string and throws on the
+- **`strict` / `is_valid`**: `strict` inspects a string and throws on the
   first forbidden character or encoding problem, without copying anything.
-  `isValid` is `strict` wrapped in a try/catch for callers who want a bool.
-- **`findSubstrings`**: partitions a string into a lazy sequence of typed
+  `is_valid` is `strict` wrapped in a try/catch for callers who want a bool.
+- **`find_substrings`**: partitions a string into a lazy sequence of typed
   `Fragment`s (`Valid`/`Forbidden`/`Invalid`), run-length-grouped, covering
   every byte of input — not just the anomalies. No write-back; build a new
   string from the fragments.
@@ -111,9 +111,9 @@ unescaped, which can make the output ambiguous to a downstream parser.
 ### Validating
 
 ```cpp
-sanitize::isValid<TightChars>("safe_filename.txt");   // true
-sanitize::isValid<TightChars>("bad;name.txt");        // false
-sanitize::isValid<LooseChars>("bad;name.txt");        // true — ';' isn't in LooseChars
+sanitize::is_valid<TightChars>("safe_filename.txt");   // true
+sanitize::is_valid<TightChars>("bad;name.txt");        // false
+sanitize::is_valid<LooseChars>("bad;name.txt");        // true — ';' isn't in LooseChars
 
 // strict throws std::invalid_argument instead of returning false.
 sanitize::strict<TightChars>("bad;name.txt");
@@ -136,17 +136,17 @@ std::string result = sanitize::map<TightChars>("a/b", [](char c) {
 
 ```cpp
 // Default: any overlong sequence is rejected, even a harmless one.
-sanitize::isValid<TightChars>(input);
+sanitize::is_valid<TightChars>(input);
 
 // Re-encode a harmless overlong sequence to its canonical minimal form
 // instead of rejecting it. A forbidden character is still always caught,
 // regardless of this policy.
-sanitize::isValid<TightChars, sanitize::Overlong::Compact>(input);
+sanitize::is_valid<TightChars, sanitize::Overlong::Compact>(input);
 ```
 
 ### Partitioning a string by type
 
-`findSubstrings` splits input into a lazy sequence of `Fragment`s, each one
+`find_substrings` splits input into a lazy sequence of `Fragment`s, each one
 a run of consecutive characters sharing the same `FragmentType` (`Valid`,
 `Forbidden`, or `Invalid`). Every byte of input is covered by exactly one
 fragment — this isn't limited to the "bad" parts, it's the whole string,
@@ -155,7 +155,7 @@ long as `input` stays alive and unmodified. There's no write-back —
 build a new string from the fragments instead of editing `input` in place.
 
 ```cpp
-for (auto frag : sanitize::findSubstrings<TightChars>("file/name.txt")) {
+for (auto frag : sanitize::find_substrings<TightChars>("file/name.txt")) {
     // Valid: "file"
     // Forbidden: "/"
     // Valid: "name.txt"
@@ -182,6 +182,12 @@ To run the included unit tests, use CTest after building:
 ```bash
 (cd build && ctest --verbose)
 ```
+
+## Code Style
+
+Source code follows *The Art of Readable Code* (Boswell & Foucher), with
+a stricter *The Power of Ten* (Holzmann) overlay on the UTF-8 parsing
+code. See `AGENTS.md` for the full record.
 
 ## License
 
