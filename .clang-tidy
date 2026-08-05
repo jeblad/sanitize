@@ -1,6 +1,3 @@
-CheckOptions:
-  - key: readability-function-cognitive-complexity.Threshold
-    value: 30
 Checks: >
   bugprone-*,
   performance-*,

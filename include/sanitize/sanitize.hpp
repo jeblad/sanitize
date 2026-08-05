@@ -24,11 +24,24 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
 namespace sanitize {
+
+/**
+ * @brief Compile-time version constants, mirroring the SANITIZE_VERSION_*
+ *        macros above for use in ordinary C++ code (template arguments,
+ *        static_assert, runtime comparisons). The macros stay defined for
+ *        callers who need #if-based version gating, which constexpr can't
+ *        do.
+ */
+inline constexpr int VersionMajor = SANITIZE_VERSION_MAJOR;
+inline constexpr int VersionMinor = SANITIZE_VERSION_MINOR;
+inline constexpr int VersionPatch = SANITIZE_VERSION_PATCH;
+inline constexpr std::string_view Version = SANITIZE_VERSION;
 
 /**
  * @brief A compile-time string usable as a non-type template parameter.
@@ -47,6 +60,7 @@ struct FixedString {
     char data[Capacity]{};
     std::size_t len = 0;
 
+    /** @brief Constructs an empty set (len == 0). */
     constexpr FixedString() = default;
 
     /**
@@ -85,48 +99,50 @@ struct FixedString {
 };
 
 /**
- * @brief Set union: characters of b not already in a are appended to a.
+ * @brief Set union: characters of rhs not already in lhs are appended to
+ * lhs.
  * @tparam N1 Capacity of the left-hand FixedString.
  * @tparam N2 Capacity of the right-hand FixedString.
- * @param a Left-hand operand.
- * @param b Right-hand operand.
- * @return A new FixedString containing every character in a or b, once
+ * @param lhs Left-hand operand.
+ * @param rhs Right-hand operand.
+ * @return A new FixedString containing every character in lhs or rhs, once
  * each.
  */
 template <std::size_t N1, std::size_t N2>
 constexpr auto operator+(
-    const FixedString<N1>& a, const FixedString<N2>& b) {
-    FixedString<N1 + N2> r;
-    for (std::size_t k = 0; k < a.len; ++k) {
-        r.data[r.len++] = a.data[k];
+    const FixedString<N1>& lhs, const FixedString<N2>& rhs) {
+    FixedString<N1 + N2> result;
+    for (std::size_t k = 0; k < lhs.len; ++k) {
+        result.data[result.len++] = lhs.data[k];
     }
-    for (std::size_t k = 0; k < b.len; ++k) {
-        if (!a.contains(b.data[k])) {
-            r.data[r.len++] = b.data[k];
+    for (std::size_t k = 0; k < rhs.len; ++k) {
+        if (!lhs.contains(rhs.data[k])) {
+            result.data[result.len++] = rhs.data[k];
         }
     }
-    return r;
+    return result;
 }
 
 /**
- * @brief Set difference: characters of a that also occur in b are dropped.
+ * @brief Set difference: characters of lhs that also occur in rhs are
+ * dropped.
  * @tparam N1 Capacity of the left-hand FixedString.
  * @tparam N2 Capacity of the right-hand FixedString.
- * @param a Left-hand operand.
- * @param b Right-hand operand.
- * @return A new FixedString containing every character in a that is not in
- * b.
+ * @param lhs Left-hand operand.
+ * @param rhs Right-hand operand.
+ * @return A new FixedString containing every character in lhs that is not
+ * in rhs.
  */
 template <std::size_t N1, std::size_t N2>
 constexpr auto operator-(
-    const FixedString<N1>& a, const FixedString<N2>& b) {
-    FixedString<N1> r;
-    for (std::size_t k = 0; k < a.len; ++k) {
-        if (!b.contains(a.data[k])) {
-            r.data[r.len++] = a.data[k];
+    const FixedString<N1>& lhs, const FixedString<N2>& rhs) {
+    FixedString<N1> result;
+    for (std::size_t k = 0; k < lhs.len; ++k) {
+        if (!rhs.contains(lhs.data[k])) {
+            result.data[result.len++] = lhs.data[k];
         }
     }
-    return r;
+    return result;
 }
 
 /**
@@ -158,20 +174,32 @@ struct Bits128 {
     std::uint64_t lo = 0;
     std::uint64_t hi = 0;
 
-    /** @param pos Bit position in [0, 128) to set. */
-    constexpr void set(unsigned char pos) {
+    /**
+     * @param pos Bit position to set.
+     * @return true if pos was in [0, 128) and the bit was set; false if
+     *         pos was out of range, in which case nothing was changed.
+     */
+    [[nodiscard]] constexpr bool set(unsigned char pos) {
+        if (pos >= 128) {
+            return false;
+        }
         if (pos < 64) {
             lo |= (std::uint64_t{1} << pos);
         } else {
             hi |= (std::uint64_t{1} << (pos - 64));
         }
+        return true;
     }
 
     /**
-     * @param pos Bit position in [0, 128) to test.
-     * @return true if the bit at pos is set.
+     * @param pos Bit position to test.
+     * @return true if pos is in [0, 128) and the bit at pos is set; false
+     *         if pos is out of range or the bit is unset.
      */
     [[nodiscard]] constexpr bool test(unsigned char pos) const {
+        if (pos >= 128) {
+            return false;
+        }
         return pos < 64 ? ((lo >> pos) & 1u) != 0
                         : ((hi >> (pos - 64)) & 1u) != 0;
     }
@@ -196,6 +224,7 @@ template <FixedString Chars>
     requires AsciiOnly<Chars>
 class Config<Chars> {
    public:
+    /** @brief Builds the forbidden-character bitset for Chars. */
     constexpr Config() : bits_(build()) {}
 
     /**
@@ -208,10 +237,15 @@ class Config<Chars> {
     }
 
    private:
+    /**
+     * @brief Sets one bit per character in Chars.
+     * @return The resulting bitset.
+     */
     static constexpr detail::Bits128 build() {
         detail::Bits128 b;
         for (std::size_t i = 0; i < Chars.len; ++i) {
-            b.set(static_cast<unsigned char>(Chars.data[i]));
+            [[maybe_unused]] bool ok =
+                b.set(static_cast<unsigned char>(Chars.data[i]));
         }
         return b;
     }
@@ -221,8 +255,16 @@ class Config<Chars> {
 
 namespace detail {
 
+/**
+ * @brief Outcome of decoding one UTF-8 sequence.
+ *
+ * Valid: well-formed and not overlong. Invalid: empty, malformed, a
+ * UTF-16 surrogate, or beyond U+10FFFF. Overlong: well-formed but encoded
+ * with more bytes than necessary — see decode_utf8.
+ */
 enum class Utf8Status : std::uint8_t { Valid, Invalid, Overlong };
 
+/** @brief Result of decode_utf8; see that function for field semantics. */
 struct Utf8Decoded {
     Utf8Status status;
     int length;
@@ -230,7 +272,7 @@ struct Utf8Decoded {
 };
 
 /**
- * @brief Decodes one UTF-8 sequence starting at p.
+ * @brief Decodes one UTF-8 sequence starting at bytes.
  *
  * Overlong is reported with the correct structural byte length and the
  * true decoded codepoint (not just a failure code), so callers can either
@@ -239,101 +281,116 @@ struct Utf8Decoded {
  * surrogate half (U+D800-U+DFFF) or beyond U+10FFFF is reported Invalid,
  * not Valid, since neither is a real Unicode codepoint.
  *
- * @param p Pointer to the first byte of the sequence.
- * @param remaining Number of bytes available at p (including p[0]).
+ * @param bytes The sequence's bytes; bytes[0] is the lead byte, and
+ *              bytes.size() bounds how many continuation bytes are
+ *              available. An empty bytes is reported as Invalid rather
+ *              than being undefined behavior.
  * @return The decode result: status, byte length consumed, and codepoint
  *         (codepoint is only meaningful for Valid and Overlong; length is
  *         always meaningful and is 1 for Invalid, so callers can skip
  *         forward one byte and retry).
  */
-constexpr Utf8Decoded decode_utf8(
-    const std::uint8_t* p,
-    std::size_t remaining) {
-    std::uint8_t c = p[0];
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+constexpr Utf8Decoded decode_utf8(std::span<const std::uint8_t> bytes) {
+    if (bytes.empty()) {
+        return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
+    }
+    std::uint8_t c = bytes[0];
     if (c < 0x80) {
         return {.status = Utf8Status::Valid, .length = 1, .codepoint = c};
     }
-    if ((c & 0xE0) == 0xC0) {
-        if (remaining < 2 || (p[1] & 0xC0) != 0x80) {
+    if ((c & 0xE0) == 0xC0) {  // lead byte 110xxxxx: 2-byte sequence
+        if (bytes.size() < 2 || (bytes[1] & 0xC0) != 0x80) {
             return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
         }
-        std::uint32_t cp =
-            static_cast<std::uint32_t>((c & 0x1Fu) << 6) | (p[1] & 0x3Fu);
-        if (cp < 0x80) {
-            return {
-                .status = Utf8Status::Overlong, .length = 2, .codepoint = cp};
+        // Lead byte's low 5 bits, then the continuation byte's low 6 bits.
+        std::uint32_t codepoint =
+            static_cast<std::uint32_t>((c & 0x1Fu) << 6) | (bytes[1] & 0x3Fu);
+        if (codepoint < 0x80) {
+            return {.status = Utf8Status::Overlong,
+                    .length = 2,
+                    .codepoint = codepoint};
         }
-        return {.status = Utf8Status::Valid, .length = 2, .codepoint = cp};
+        return {.status = Utf8Status::Valid,
+                .length = 2,
+                .codepoint = codepoint};
     }
-    if ((c & 0xF0) == 0xE0) {
-        if (remaining < 3 || (p[1] & 0xC0) != 0x80 ||
-            (p[2] & 0xC0) != 0x80) {
+    if ((c & 0xF0) == 0xE0) {  // lead byte 1110xxxx: 3-byte sequence
+        if (bytes.size() < 3 || (bytes[1] & 0xC0) != 0x80 ||
+            (bytes[2] & 0xC0) != 0x80) {
             return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
         }
-        std::uint32_t cp = static_cast<std::uint32_t>((c & 0x0Fu) << 12) |
-                           static_cast<std::uint32_t>((p[1] & 0x3Fu) << 6) |
-                           (p[2] & 0x3Fu);
-        if (cp < 0x800) {
-            return {
-                .status = Utf8Status::Overlong, .length = 3, .codepoint = cp};
+        std::uint32_t codepoint =
+            static_cast<std::uint32_t>((c & 0x0Fu) << 12) |
+            static_cast<std::uint32_t>((bytes[1] & 0x3Fu) << 6) |
+            (bytes[2] & 0x3Fu);
+        if (codepoint < 0x800) {
+            return {.status = Utf8Status::Overlong,
+                    .length = 3,
+                    .codepoint = codepoint};
         }
-        if (cp >= 0xD800 && cp <= 0xDFFF) {
+        if (codepoint >= 0xD800 && codepoint <= 0xDFFF) {
             // UTF-16 surrogate half encoded as UTF-8: never a valid codepoint.
             return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
         }
-        return {.status = Utf8Status::Valid, .length = 3, .codepoint = cp};
+        return {.status = Utf8Status::Valid,
+                .length = 3,
+                .codepoint = codepoint};
     }
-    if ((c & 0xF8) == 0xF0) {
-        if (remaining < 4 || (p[1] & 0xC0) != 0x80 ||
-            (p[2] & 0xC0) != 0x80 || (p[3] & 0xC0) != 0x80) {
+    if ((c & 0xF8) == 0xF0) {  // lead byte 11110xxx: 4-byte sequence
+        if (bytes.size() < 4 || (bytes[1] & 0xC0) != 0x80 ||
+            (bytes[2] & 0xC0) != 0x80 || (bytes[3] & 0xC0) != 0x80) {
             return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
         }
-        std::uint32_t cp =
+        std::uint32_t codepoint =
             static_cast<std::uint32_t>((c & 0x07u) << 18) |
-            static_cast<std::uint32_t>((p[1] & 0x3Fu) << 12) |
-            static_cast<std::uint32_t>((p[2] & 0x3Fu) << 6) |
-            (p[3] & 0x3Fu);
-        if (cp >= 0xD800 && cp <= 0xDFFF) {
+            static_cast<std::uint32_t>((bytes[1] & 0x3Fu) << 12) |
+            static_cast<std::uint32_t>((bytes[2] & 0x3Fu) << 6) |
+            (bytes[3] & 0x3Fu);
+        if (codepoint >= 0xD800 && codepoint <= 0xDFFF) {
             // UTF-16 surrogate half: never a valid codepoint, regardless
             // of whether this 4-byte encoding of it is also overlong.
             return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
         }
-        if (cp < 0x10000) {
-            return {
-                .status = Utf8Status::Overlong, .length = 4, .codepoint = cp};
+        if (codepoint < 0x10000) {
+            return {.status = Utf8Status::Overlong,
+                    .length = 4,
+                    .codepoint = codepoint};
         }
-        if (cp > 0x10FFFF) {
+        if (codepoint > 0x10FFFF) {
             // Beyond the Unicode range: not a real codepoint.
             return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
         }
-        return {.status = Utf8Status::Valid, .length = 4, .codepoint = cp};
+        return {.status = Utf8Status::Valid,
+                .length = 4,
+                .codepoint = codepoint};
     }
     return {.status = Utf8Status::Invalid, .length = 1, .codepoint = 0};
 }
 
 /**
  * @brief Encodes a codepoint as canonical (minimal-length) UTF-8.
- * @param cp The codepoint to encode.
- * @return The UTF-8 byte sequence for cp, 1 to 4 bytes long.
+ * @param codepoint The codepoint to encode.
+ * @return The UTF-8 byte sequence for codepoint, 1 to 4 bytes long.
  */
-inline std::string encode_utf8(std::uint32_t cp) {
-    std::string out;
-    if (cp < 0x80) {
-        out += static_cast<char>(cp);
-    } else if (cp < 0x800) {
-        out += static_cast<char>(0xC0 | (cp >> 6));
-        out += static_cast<char>(0x80 | (cp & 0x3F));
-    } else if (cp < 0x10000) {
-        out += static_cast<char>(0xE0 | (cp >> 12));
-        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (cp & 0x3F));
+inline std::string encode_utf8(std::uint32_t codepoint) {
+    std::string result;
+    if (codepoint < 0x80) {
+        result += static_cast<char>(codepoint);
+    } else if (codepoint < 0x800) {
+        result += static_cast<char>(0xC0 | (codepoint >> 6));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint < 0x10000) {
+        result += static_cast<char>(0xE0 | (codepoint >> 12));
+        result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
     } else {
-        out += static_cast<char>(0xF0 | (cp >> 18));
-        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (cp & 0x3F));
+        result += static_cast<char>(0xF0 | (codepoint >> 18));
+        result += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
     }
-    return out;
+    return result;
 }
 
 /**
@@ -374,12 +431,22 @@ inline std::string escape_one(char c) {
 }
 
 /**
- * @brief Whether an overlong sequence's decoded codepoint is itself
- *        forbidden by Chars — the check that must run identically
- *        regardless of the caller's Overlong policy.
+ * @brief Whether decoded's codepoint is itself forbidden by Chars.
+ *
+ * Shared by every caller that needs this check, regardless of decoded's
+ * status: for a Valid single-byte result, codepoint < 128 exactly when
+ * length == 1, so this doubles as the plain-ASCII check; for an Overlong
+ * result it is the check that must run identically regardless of the
+ * caller's Overlong policy. Config only knows how to test ASCII
+ * characters, so anything else is never forbidden.
+ *
+ * @tparam Chars The forbidden-character set.
+ * @param config A Config<Chars> instance to check against.
+ * @param decoded A decode result from decode_utf8.
+ * @return true if decoded's codepoint is a member of Chars.
  */
 template <FixedString Chars>
-[[nodiscard]] constexpr bool overlong_is_forbidden(
+[[nodiscard]] constexpr bool is_forbidden_codepoint(
     const Config<Chars>& config, const Utf8Decoded& decoded) {
     return decoded.codepoint < 128
         && config.is_forbidden(static_cast<char>(decoded.codepoint));
@@ -388,7 +455,7 @@ template <FixedString Chars>
 }  // namespace detail
 
 /**
- * @brief Classification of one substring yielded by findSubstrings.
+ * @brief Classification of one substring yielded by find_substrings.
  *
  * Overlong sequences are classified Forbidden if their decoded codepoint
  * is itself forbidden, and Invalid otherwise — an overlong encoding is
@@ -405,28 +472,36 @@ struct Fragment {
 
 namespace detail {
 
+/** @brief Result of classify_one: one character's type and byte length. */
 struct ClassifiedChar {
     FragmentType type;
     std::size_t length;
 };
 
+/**
+ * @brief Decodes and classifies the character starting at bytes[0].
+ * @tparam Chars The forbidden-character set.
+ * @param config A Config<Chars> instance to check against.
+ * @param bytes The character's bytes; see decode_utf8 for how the span
+ *              bounds the decode.
+ * @return The character's FragmentType and its byte length.
+ */
 template <FixedString Chars>
 [[nodiscard]] ClassifiedChar classify_one(
-    const Config<Chars>& config, const std::uint8_t* p, std::size_t remaining) {
-    auto decoded = decode_utf8(p, remaining);
+    const Config<Chars>& config, std::span<const std::uint8_t> bytes) {
+    auto decoded = decode_utf8(bytes);
     auto length = static_cast<std::size_t>(decoded.length);
 
     if (decoded.status == Utf8Status::Invalid) {
         return {.type = FragmentType::Invalid, .length = length};
     }
     if (decoded.status == Utf8Status::Overlong) {
-        bool forbidden = overlong_is_forbidden<Chars>(config, decoded);
+        bool forbidden = is_forbidden_codepoint<Chars>(config, decoded);
         return {
             .type = forbidden ? FragmentType::Forbidden : FragmentType::Invalid,
             .length = length};
     }
-    if (length == 1
-        && config.is_forbidden(static_cast<char>(decoded.codepoint))) {
+    if (is_forbidden_codepoint<Chars>(config, decoded)) {
         return {.type = FragmentType::Forbidden, .length = length};
     }
     return {.type = FragmentType::Valid, .length = length};
@@ -450,47 +525,66 @@ template <FixedString Chars>
 template <FixedString Chars>
 class SubstringRange {
 public:
+    /**
+     * @brief Empty marker type; compares unequal to iterator until
+     *        input is exhausted.
+     */
     struct sentinel {};
 
+    /** @brief Forward-only iterator yielding Fragment, one run at a time. */
     class iterator {
     public:
         using value_type = Fragment;
 
+        /**
+         * @brief Constructs an iterator and classifies the first run.
+         * @param input The string being partitioned.
+         * @param pos Byte offset to start classifying from.
+         */
         iterator(std::string_view input, std::size_t pos)
             : input_(input), pos_(pos) {
             advance();
         }
 
+        /** @return The Fragment for the run at the current position. */
         [[nodiscard]] Fragment operator*() const { return current_; }
 
+        /** @brief Advances to the next run. @return *this. */
         iterator& operator++() {
             pos_ = end_;
             advance();
             return *this;
         }
 
-        bool operator!=([[maybe_unused]] sentinel end) const {
+        /**
+         * @param terminator The end-of-range sentinel; carries no data,
+         *                    present only so a range-based for loop can
+         *                    compare against it.
+         * @return true if the iterator hasn't reached the end of input.
+         */
+        bool operator!=([[maybe_unused]] sentinel terminator) const {
             return pos_ < input_.size();
         }
 
     private:
+        /** @brief Classifies the run starting at pos_ into current_. */
         void advance() {
             if (pos_ >= input_.size()) {
                 return;
             }
             static constexpr Config<Chars> config{};
-            const auto* p =
-                reinterpret_cast<const std::uint8_t*>(input_.data());
+            std::span<const std::uint8_t> bytes(
+                reinterpret_cast<const std::uint8_t*>(input_.data()),
+                input_.size());
 
             std::size_t i = pos_;
-            auto first = detail::classify_one<Chars>(
-                config, p + i, input_.size() - i);
+            auto first = detail::classify_one<Chars>(config, bytes.subspan(i));
             FragmentType type = first.type;
             i += first.length;
 
             while (i < input_.size()) {
-                auto next = detail::classify_one<Chars>(
-                    config, p + i, input_.size() - i);
+                auto next =
+                    detail::classify_one<Chars>(config, bytes.subspan(i));
                 if (next.type != type) {
                     break;
                 }
@@ -508,8 +602,14 @@ public:
         Fragment current_{};
     };
 
+    /**
+     * @param input The string to partition; not copied, must outlive
+     *              the range.
+     */
     explicit SubstringRange(std::string_view input) : input_(input) {}
+    /** @return An iterator at the first run of input. */
     [[nodiscard]] iterator begin() const { return iterator(input_, 0); }
+    /** @return The sentinel marking the end of input. */
     [[nodiscard]] sentinel end() const { return {}; }
 
 private:
@@ -523,7 +623,7 @@ private:
  * @return A lazy range of Fragment; iterate it with a range-based for loop.
  */
 template <FixedString Chars>
-[[nodiscard]] SubstringRange<Chars> findSubstrings(std::string_view input) {
+[[nodiscard]] SubstringRange<Chars> find_substrings(std::string_view input) {
     return SubstringRange<Chars>(input);
 }
 
@@ -584,11 +684,12 @@ std::string map(std::string_view input, Transform transform) {
     std::string result;
     result.reserve(input.size());
 
-    const auto* p = reinterpret_cast<const std::uint8_t*>(input.data());
+    std::span<const std::uint8_t> bytes(
+        reinterpret_cast<const std::uint8_t*>(input.data()), input.size());
     std::size_t len = input.size();
 
     for (std::size_t i = 0; i < len;) {
-        auto decoded = detail::decode_utf8(p + i, len - i);
+        auto decoded = detail::decode_utf8(bytes.subspan(i));
 
         if (decoded.status == detail::Utf8Status::Invalid) {
             throw std::invalid_argument("Invalid UTF-8 sequence");
@@ -596,7 +697,7 @@ std::string map(std::string_view input, Transform transform) {
 
         if (decoded.status == detail::Utf8Status::Overlong) {
             bool forbidden =
-                detail::overlong_is_forbidden<Chars>(config, decoded);
+                detail::is_forbidden_codepoint<Chars>(config, decoded);
             if (forbidden) {
                 result += transform(static_cast<char>(decoded.codepoint));
             } else if constexpr (OverlongPolicy == Overlong::Throw) {
@@ -618,7 +719,7 @@ std::string map(std::string_view input, Transform transform) {
 
         if (decoded.length == 1) {
             char c = static_cast<char>(decoded.codepoint);
-            if (config.is_forbidden(c)) {
+            if (detail::is_forbidden_codepoint<Chars>(config, decoded)) {
                 result += transform(c);  // NOLINT(build/include_what_you_use)
             } else {
                 result += c;
@@ -715,17 +816,18 @@ std::string escape(std::string_view input) {
 template <FixedString Chars, Overlong OverlongPolicy = Overlong::Throw>
 void strict(std::string_view input) {
     static constexpr Config<Chars> config{};
-    const auto* p = reinterpret_cast<const std::uint8_t*>(input.data());
+    std::span<const std::uint8_t> bytes(
+        reinterpret_cast<const std::uint8_t*>(input.data()), input.size());
     std::size_t len = input.size();
 
     for (std::size_t i = 0; i < len;) {
-        auto decoded = detail::decode_utf8(p + i, len - i);
+        auto decoded = detail::decode_utf8(bytes.subspan(i));
         if (decoded.status == detail::Utf8Status::Invalid) {
             throw std::invalid_argument("Invalid UTF-8 sequence");
         }
         if (decoded.status == detail::Utf8Status::Overlong) {
             bool forbidden =
-                detail::overlong_is_forbidden<Chars>(config, decoded);
+                detail::is_forbidden_codepoint<Chars>(config, decoded);
             if (forbidden) {
                 throw std::invalid_argument("Forbidden character detected");
             }
@@ -733,10 +835,8 @@ void strict(std::string_view input) {
                 throw std::invalid_argument(
                     "Overlong UTF-8 encoding detected");
             }
-        } else if (decoded.length == 1) {
-            if (config.is_forbidden(static_cast<char>(decoded.codepoint))) {
-                throw std::invalid_argument("Forbidden character detected");
-            }
+        } else if (detail::is_forbidden_codepoint<Chars>(config, decoded)) {
+            throw std::invalid_argument("Forbidden character detected");
         }
         i += static_cast<std::size_t>(decoded.length);
     }
@@ -760,7 +860,7 @@ void strict(std::string_view input) {
  * otherwise.
  */
 template <FixedString Chars, Overlong OverlongPolicy = Overlong::Throw>
-bool isValid(std::string_view input) noexcept {
+bool is_valid(std::string_view input) noexcept {
     try {
         strict<Chars, OverlongPolicy>(input);
         return true;

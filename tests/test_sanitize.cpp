@@ -85,18 +85,18 @@ void test_escape() {
     std::cout << "Escape tests passed!\n" << std::endl;
 }
 
-void test_strict_and_isvalid() {
-    std::cout << "Running strict/isValid tests..." << std::endl;
+void test_strict_and_is_valid() {
+    std::cout << "Running strict/is_valid tests..." << std::endl;
 
-    assert((isValid<TightChars>("valid_filename.txt") == true));
-    assert((isValid<TightChars>("filename with spaces.txt") == false));
-    assert((isValid<LooseChars>("filename with spaces.txt") == true));
+    assert((is_valid<TightChars>("valid_filename.txt") == true));
+    assert((is_valid<TightChars>("filename with spaces.txt") == false));
+    assert((is_valid<LooseChars>("filename with spaces.txt") == true));
 
-    assert((isValid<TightChars>("bad;char.txt") == false));
-    assert((isValid<LooseChars>("bad;char.txt") == true));
+    assert((is_valid<TightChars>("bad;char.txt") == false));
+    assert((is_valid<LooseChars>("bad;char.txt") == true));
 
     // Overlong UTF-8 (security bypass attempt) is rejected by default.
-    assert((isValid<TightChars>("\xC0\xAF") == false));
+    assert((is_valid<TightChars>("\xC0\xAF") == false));
 
     bool threw = false;
     try {
@@ -106,7 +106,7 @@ void test_strict_and_isvalid() {
     }
     assert(threw);
 
-    std::cout << "Strict/isValid tests passed!\n" << std::endl;
+    std::cout << "Strict/is_valid tests passed!\n" << std::endl;
 }
 
 void test_utf8_range_validation() {
@@ -114,22 +114,22 @@ void test_utf8_range_validation() {
 
     // A UTF-16 surrogate half (U+D800) encoded as well-formed 3-byte UTF-8
     // is not a real codepoint and must be rejected, not passed through.
-    assert((isValid<TightChars>("\xED\xA0\x80") == false));
+    assert((is_valid<TightChars>("\xED\xA0\x80") == false));
 
     // A well-formed 4-byte sequence decoding past U+10FFFF (here 0x1FFFFF)
     // is not a real codepoint either.
-    assert((isValid<TightChars>("\xF7\xBF\xBF\xBF") == false));
+    assert((is_valid<TightChars>("\xF7\xBF\xBF\xBF") == false));
 
     // U+10FFFF itself is the maximum valid codepoint and must still pass.
-    assert((isValid<TightChars>("\xF4\x8F\xBF\xBF") == true));
+    assert((is_valid<TightChars>("\xF4\x8F\xBF\xBF") == true));
 
     // A UTF-16 surrogate half (U+D800) overlong-encoded as 4 bytes must
     // also be rejected — not classified as merely Overlong — regardless
     // of the Overlong policy, since it's never a real codepoint.
     const std::string overlong_surrogate = "\xF0\x8D\xA0\x80";
-    assert((isValid<TightChars>(overlong_surrogate) == false));
-    assert((isValid<TightChars, Overlong::Compact>(overlong_surrogate) == false));
-    assert((isValid<TightChars, Overlong::AsIs>(overlong_surrogate) == false));
+    assert((is_valid<TightChars>(overlong_surrogate) == false));
+    assert((is_valid<TightChars, Overlong::Compact>(overlong_surrogate) == false));
+    assert((is_valid<TightChars, Overlong::AsIs>(overlong_surrogate) == false));
 
     std::cout << "UTF-8 range validation tests passed!\n" << std::endl;
 }
@@ -139,8 +139,8 @@ void test_overlong_policies() {
 
     // Overlong-encoded 'A' (0x41) as a 2-byte sequence: harmless once decoded.
     const std::string overlong_a = "\xC1\x81";
-    assert((isValid<TightChars, Overlong::Throw>(overlong_a) == false));
-    assert((isValid<TightChars, Overlong::Compact>(overlong_a) == true));
+    assert((is_valid<TightChars, Overlong::Throw>(overlong_a) == false));
+    assert((is_valid<TightChars, Overlong::Compact>(overlong_a) == true));
     assert((replace<TightChars, '_', Overlong::Compact>(overlong_a) == "A"));
     assert((replace<TightChars, '_', Overlong::AsIs>(overlong_a) == overlong_a));
     assert((replace<TightChars, '_', Overlong::Remove>(overlong_a) == ""));
@@ -149,19 +149,19 @@ void test_overlong_policies() {
     // Overlong-encoded '/' (forbidden in TightChars): caught regardless of
     // policy, since detection always runs against the decoded codepoint.
     const std::string overlong_slash = "\xC0\xAF";
-    assert((isValid<TightChars, Overlong::AsIs>(overlong_slash) == false));
+    assert((is_valid<TightChars, Overlong::AsIs>(overlong_slash) == false));
     assert((replace<TightChars, '_', Overlong::AsIs>(overlong_slash) == "_"));
 
     std::cout << "Overlong policy tests passed!\n" << std::endl;
 }
 
 void test_find_substrings() {
-    std::cout << "Running findSubstrings tests..." << std::endl;
+    std::cout << "Running find_substrings tests..." << std::endl;
 
     // Run-length grouping: valid, forbidden, valid.
     {
         std::vector<std::pair<FragmentType, std::string>> got;
-        for (auto frag : findSubstrings<TightChars>("abc/def")) {
+        for (auto frag : find_substrings<TightChars>("abc/def")) {
             got.emplace_back(frag.type, std::string(frag.text));
         }
         assert(got.size() == 3);
@@ -174,7 +174,7 @@ void test_find_substrings() {
     {
         std::vector<FragmentType> types;
         std::vector<std::string> texts;
-        for (auto frag : findSubstrings<TightChars>("a//b")) {
+        for (auto frag : find_substrings<TightChars>("a//b")) {
             types.push_back(frag.type);
             texts.emplace_back(frag.text);
         }
@@ -188,7 +188,7 @@ void test_find_substrings() {
     {
         int count = 0;
         FragmentType only_type{};
-        for (auto frag : findSubstrings<TightChars>("bl\xC3\xA5" "b\xC3\xA6" "r")) {
+        for (auto frag : find_substrings<TightChars>("bl\xC3\xA5" "b\xC3\xA6" "r")) {
             only_type = frag.type;
             ++count;
         }
@@ -201,7 +201,7 @@ void test_find_substrings() {
     {
         std::vector<FragmentType> types;
         std::vector<std::string> texts;
-        for (auto frag : findSubstrings<TightChars>("a\xFF" "\xFF" "b")) {
+        for (auto frag : find_substrings<TightChars>("a\xFF" "\xFF" "b")) {
             types.push_back(frag.type);
             texts.emplace_back(frag.text);
         }
@@ -214,7 +214,7 @@ void test_find_substrings() {
     {
         int count = 0;
         FragmentType only_type{};
-        for (auto frag : findSubstrings<TightChars>("\xC0\xAF")) {
+        for (auto frag : find_substrings<TightChars>("\xC0\xAF")) {
             only_type = frag.type;
             ++count;
         }
@@ -227,7 +227,7 @@ void test_find_substrings() {
     {
         int count = 0;
         FragmentType only_type{};
-        for (auto frag : findSubstrings<TightChars>("\xC1\x81")) {
+        for (auto frag : find_substrings<TightChars>("\xC1\x81")) {
             only_type = frag.type;
             ++count;
         }
@@ -239,7 +239,7 @@ void test_find_substrings() {
     {
         int count = 0;
         FragmentType only_type{};
-        for (auto frag : findSubstrings<TightChars>("\xF0\x8D\xA0\x80")) {
+        for (auto frag : find_substrings<TightChars>("\xF0\x8D\xA0\x80")) {
             only_type = frag.type;
             ++count;
         }
@@ -250,7 +250,7 @@ void test_find_substrings() {
     // Empty input yields zero fragments.
     {
         int count = 0;
-        for (auto frag : findSubstrings<TightChars>("")) {
+        for (auto frag : find_substrings<TightChars>("")) {
             (void)frag;
             ++count;
         }
@@ -260,7 +260,7 @@ void test_find_substrings() {
     // Fragments can be used to rebuild a replace()-equivalent string.
     {
         std::string rebuilt;
-        for (auto frag : findSubstrings<TightChars>("file/name.txt")) {
+        for (auto frag : find_substrings<TightChars>("file/name.txt")) {
             if (frag.type == FragmentType::Valid) {
                 rebuilt += frag.text;
             } else {
@@ -270,7 +270,7 @@ void test_find_substrings() {
         assert(rebuilt == "file_name.txt");
     }
 
-    std::cout << "findSubstrings tests passed!\n" << std::endl;
+    std::cout << "find_substrings tests passed!\n" << std::endl;
 }
 
 int main() {
@@ -279,7 +279,7 @@ int main() {
         test_replace();
         test_filter();
         test_escape();
-        test_strict_and_isvalid();
+        test_strict_and_is_valid();
         test_utf8_range_validation();
         test_overlong_policies();
         test_find_substrings();
